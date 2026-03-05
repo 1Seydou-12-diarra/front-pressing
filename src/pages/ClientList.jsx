@@ -2,21 +2,29 @@
 import React, { useEffect, useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Button, Stack } from '@mui/material';
-import { ClientApi } from '../api/axiosClient';
 import { useNavigate } from 'react-router-dom';
+import { useKeycloak } from '@react-keycloak/web';
+import axios from 'axios';
 
 export default function ClientList() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { keycloak, initialized } = useKeycloak();
 
   const fetchClients = async () => {
+    if (!initialized || !keycloak.authenticated) return; // ⚠️ sécurité
+
     setLoading(true);
     try {
-      const response = await ClientApi.rechercher({});
+      const response = await axios.get('http://localhost:8284/api/clients', {
+        headers: {
+          Authorization: `Bearer ${keycloak.token}`,
+        },
+      });
       setClients(response.data);
     } catch (error) {
-      console.error(error);
+      console.error('Erreur API:', error.response || error.message);
     } finally {
       setLoading(false);
     }
@@ -24,7 +32,7 @@ export default function ClientList() {
 
   useEffect(() => {
     fetchClients();
-  }, []);
+  }, [initialized, keycloak]); // ⚡ relance si keycloak s'initialise
 
   const columns = [
     { field: 'id', headerName: 'ID', width: 80 },
@@ -51,8 +59,15 @@ export default function ClientList() {
             color="error"
             size="small"
             onClick={async () => {
-              await ClientApi.desactiver(params.row.id);
-              fetchClients();
+              try {
+                await axios.delete(
+                  `http://localhost:8284/api/clients/${params.row.id}`,
+                  { headers: { Authorization: `Bearer ${keycloak.token}` } }
+                );
+                fetchClients();
+              } catch (err) {
+                console.error('Erreur désactivation:', err.response || err.message);
+              }
             }}
           >
             Désactiver
