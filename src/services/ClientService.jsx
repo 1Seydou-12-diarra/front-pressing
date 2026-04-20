@@ -1,16 +1,23 @@
 import axios from "axios";
-import keycloak from "../keycloak"; // keycloak.js est dans src/
+import keycloak from "../keycloak";
 
 const API_URL = "http://localhost:8284/api/clients";
 
-// ─── Instance Axios dédiée ────────────────────────────────────────────────────
 const axiosClient = axios.create({
   baseURL: API_URL,
 });
 
-// ─── Intercepteur request : injecte le token Keycloak ────────────────────────
+// ─── Intercepteur request : rafraîchit et injecte le token ──────────────────
 axiosClient.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    try {
+      // ⬅️ Rafraîchit le token s'il expire dans moins de 30 secondes
+      await keycloak.updateToken(30);
+    } catch (e) {
+      keycloak.login(); // token non renouvelable → reconnexion
+      return Promise.reject(e);
+    }
+
     if (keycloak?.token) {
       config.headers.Authorization = `Bearer ${keycloak.token}`;
     }
@@ -19,29 +26,25 @@ axiosClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ─── Intercepteur response : gestion des erreurs globales ────────────────────
+// ─── Intercepteur response ───────────────────────────────────────────────────
 axiosClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expiré → relance l'authentification Keycloak
       keycloak.login();
     }
     return Promise.reject(error);
   }
 );
 
-// ─── Service client ───────────────────────────────────────────────────────────
+// ─── Service client ──────────────────────────────────────────────────────────
 const clientService = {
-  // Créer un client
   creer: (data) =>
     axiosClient.post("", data).then((r) => r.data),
 
-  // Trouver par ID
   trouverParId: (id) =>
     axiosClient.get(`/${id}`).then((r) => r.data),
 
-  // Rechercher (liste paginable)
   rechercher: (nom = "", telephone = "") =>
     axiosClient
       .get("", {
@@ -49,23 +52,19 @@ const clientService = {
       })
       .then((r) => r.data),
 
-  // Désactiver
   desactiver: (id) =>
     axiosClient.delete(`/${id}`).then((r) => r.data),
 
-  // Créditer points fidélité
   crediterPoints: (id, montant) =>
     axiosClient
       .post(`/${id}/fidelite/credit`, null, { params: { montant } })
       .then((r) => r.data),
 
-  // Utiliser points fidélité
   utiliserPoints: (id, points) =>
     axiosClient
       .post(`/${id}/fidelite/utiliser`, null, { params: { points } })
       .then((r) => r.data),
 
-  // Solde fidélité
   soldeFidelite: (id) =>
     axiosClient.get(`/${id}/fidelite`).then((r) => r.data),
 };

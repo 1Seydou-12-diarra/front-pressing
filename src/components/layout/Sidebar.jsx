@@ -15,13 +15,18 @@ const ICONS = {
   "/dashboard": <Dashboard fontSize="small" />,
   "/clients":   <People fontSize="small" />,
   "/commandes": <ShoppingBag fontSize="small" />,
+  "/employes": <ShoppingBag fontSize="small" />,
   "/caisse":    <PointOfSale fontSize="small" />,
+  "/agences":    <PointOfSale fontSize="small" />,
+
 };
 
 const menuItems = [
   { label: "Dashboard", path: "/dashboard", roles: ["ROLE_ADMIN", "ROLE_MANAGER"] },
   { label: "Clients",   path: "/clients",   roles: ["ROLE_ADMIN", "ROLE_EMPLOYE", "ROLE_CAISSIER"] },
   { label: "Commandes", path: "/commandes", roles: ["ROLE_ADMIN", "ROLE_CAISSIER", "ROLE_MANAGER", "ROLE_EMPLOYE"] },
+  { label: "employes", path: "/employes", roles: ["ROLE_ADMIN", "ROLE_CAISSIER", "ROLE_MANAGER", "ROLE_EMPLOYE"] },
+  { label: "Agences",    path: "/agences",    roles: ["ROLE_ADMIN", "ROLE_MANAGER"] },
   { label: "Caisse",    path: "/caisse",    roles: ["ROLE_ADMIN", "ROLE_CAISSIER"] },
 ];
 

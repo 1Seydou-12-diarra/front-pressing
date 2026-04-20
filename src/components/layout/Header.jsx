@@ -4,6 +4,7 @@ import { AppBar, Toolbar, Typography, IconButton, Box, Chip } from "@mui/materia
 import MenuIcon from "@mui/icons-material/Menu";
 import { LocalLaundryService } from "@mui/icons-material";
 import { useKeycloak } from "@react-keycloak/web";
+import NotificationBell from "./NotificationBell";
 
 export default function Header({ user, onDrawerToggle }) {
   const { keycloak } = useKeycloak();
@@ -33,7 +34,6 @@ export default function Header({ user, onDrawerToggle }) {
 
         {/* ── Logo ── */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-          {/* Icône */}
           <Box
             sx={{
               width: 36, height: 36,
@@ -47,7 +47,6 @@ export default function Header({ user, onDrawerToggle }) {
             <LocalLaundryService sx={{ color: "#fff", fontSize: 20 }} />
           </Box>
 
-          {/* Texte logo */}
           <Box>
             <Typography
               variant="body1"
@@ -73,34 +72,42 @@ export default function Header({ user, onDrawerToggle }) {
         {/* Séparateur */}
         <Box sx={{ flex: 1 }} />
 
-        {/* Infos user */}
-        <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center", gap: 1 }}>
-          {agenceId && (
-            <Chip
-              label={`Agence #${agenceId}`}
-              size="small"
-              sx={{
-                bgcolor: "#e9456015",
-                color: "#e94560",
-                fontSize: 11,
-                border: "1px solid #e9456040",
-                fontWeight: 600,
-              }}
-            />
-          )}
-          {username && (
-            <Chip
-              label={username}
-              size="small"
-              sx={{
-                bgcolor: "#0f3460",
-                color: "#8892a4",
-                fontSize: 11,
-                border: "1px solid #1e3a5f",
-              }}
-            />
-          )}
+        {/* ── Zone droite : cloche + infos user ── */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+
+          {/* Cloche notifications */}
+          <NotificationBell />
+
+          {/* Infos user (cachées sur mobile) */}
+          <Box sx={{ display: { xs: "none", sm: "flex" }, alignItems: "center", gap: 1 }}>
+            {agenceId && (
+              <Chip
+                label={`Agence #${agenceId}`}
+                size="small"
+                sx={{
+                  bgcolor: "#e9456015",
+                  color: "#e94560",
+                  fontSize: 11,
+                  border: "1px solid #e9456040",
+                  fontWeight: 600,
+                }}
+              />
+            )}
+            {username && (
+              <Chip
+                label={username}
+                size="small"
+                sx={{
+                  bgcolor: "#0f3460",
+                  color: "#8892a4",
+                  fontSize: 11,
+                  border: "1px solid #1e3a5f",
+                }}
+              />
+            )}
+          </Box>
         </Box>
+
       </Toolbar>
     </AppBar>
   );

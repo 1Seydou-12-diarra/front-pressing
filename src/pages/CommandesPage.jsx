@@ -24,18 +24,28 @@ const C = {
   green: "#3fb950", yellow: "#d29922", purple: "#bc8cff", orange: "#ffa657", red: "#f85149",
 };
 
+// ✅ Statuts alignés avec le backend
 const STATUTS = [
-  { key: "DEPOSE",   label: "Déposé",   color: C.blue,   icon: <Inventory2 fontSize="small" /> },
-  { key: "EN_COURS", label: "En cours", color: C.yellow, icon: <LocalLaundryService fontSize="small" /> },
-  { key: "PRET",     label: "Prêt",     color: C.purple, icon: <CheckCircle fontSize="small" /> },
-  { key: "LIVRE",    label: "Livré",    color: C.green,  icon: <Done fontSize="small" /> },
-  { key: "ANNULE",   label: "Annulé",   color: C.red,    icon: <Cancel fontSize="small" /> },
+  { key: "DEPOSE",        label: "Déposé",        color: C.blue,   icon: <Inventory2 fontSize="small" /> },
+  { key: "EN_TRAITEMENT", label: "En traitement",  color: C.yellow, icon: <LocalLaundryService fontSize="small" /> },
+  { key: "PRET",          label: "Prêt",           color: C.purple, icon: <CheckCircle fontSize="small" /> },
+  { key: "RETIRE",        label: "Retiré",         color: C.green,  icon: <Done fontSize="small" /> },
 ];
+
+// ✅ Transitions autorisées selon le backend
+const TRANSITIONS_AUTORISEES = {
+  DEPOSE:        ["EN_TRAITEMENT"],
+  EN_TRAITEMENT: ["PRET"],
+  PRET:          ["RETIRE"],
+  RETIRE:        [],
+};
+
+// ✅ Timeline alignée
+const TIMELINE_STEPS = ["DEPOSE", "EN_TRAITEMENT", "PRET", "RETIRE"];
 
 const TYPES_VETEMENT = ["CHEMISE","PANTALON","VESTE","ROBE","MANTEAU","COSTUME","JUPE","PULL","TSHIRT","AUTRE"];
 const SERVICES = ["REPASSAGE","NETTOYAGE_SEC","LAVAGE","LAVAGE_REPASSAGE","DETACHAGE","IMPERMEABILISATION"];
 const EMPTY_ARTICLE = { typeVetement: "", service: "", observations: "", codeBarres: "" };
-const TIMELINE_STEPS = ["DEPOSE", "EN_COURS", "PRET", "LIVRE"];
 
 const statutInfo = (key) => STATUTS.find((s) => s.key === key) || STATUTS[0];
 const formatDate = (d) =>
@@ -76,19 +86,35 @@ export default function CommandesPage() {
 
   useEffect(() => { charger(); chargerClients(); }, [charger, chargerClients]);
 
-  const colonnes = STATUTS.map((s) => ({ ...s, items: commandes.filter((c) => c.statut === s.key) }));
+  const colonnes = STATUTS.map((s) => ({
+    ...s,
+    items: commandes.filter((c) => c.statut === s.key),
+  }));
 
   const onDragStart = (cmd) => { dragItem.current = cmd; };
   const onDragOver  = (e, key) => { e.preventDefault(); dragOverCol.current = key; };
+
+  // ✅ Drag & drop avec validation des transitions
   const onDrop = async (e, statutKey) => {
     e.preventDefault();
     const cmd = dragItem.current;
     if (!cmd || cmd.statut === statutKey) return;
+
+    const autorisees = TRANSITIONS_AUTORISEES[cmd.statut] || [];
+    if (!autorisees.includes(statutKey)) {
+      notify(`Transition non autorisée : ${statutInfo(cmd.statut).label} → ${statutInfo(statutKey).label}`, "warning");
+      dragItem.current = null;
+      return;
+    }
+
     setCommandes((prev) => prev.map((c) => c.id === cmd.id ? { ...c, statut: statutKey } : c));
     try {
       await commandeService.changerStatut(cmd.id, statutKey);
       notify(`Commande #${cmd.id} → ${statutInfo(statutKey).label}`);
-    } catch { notify("Erreur changement statut", "error"); charger(); }
+    } catch {
+      notify("Erreur changement statut", "error");
+      charger();
+    }
     dragItem.current = null;
   };
 
@@ -98,12 +124,18 @@ export default function CommandesPage() {
   };
 
   const handleSubmitDepot = async () => {
-    if (!form.clientId)        { notify("Sélectionne un client", "warning"); return; }
+    if (!form.clientId)          { notify("Sélectionne un client", "warning"); return; }
     if (!form.dateRetraitPrevue) { notify("Date de retrait requise", "warning"); return; }
-    if (form.articles.some((a) => !a.typeVetement || !a.service)) { notify("Complète tous les articles", "warning"); return; }
+    if (form.articles.some((a) => !a.typeVetement || !a.service)) {
+      notify("Complète tous les articles", "warning"); return;
+    }
     setSaving(true);
     try {
-      await commandeService.creerDepot({ ...form, clientId: form.clientId.id, dateRetraitPrevue: form.dateRetraitPrevue + ":00" });
+      await commandeService.creerDepot({
+        ...form,
+        clientId: form.clientId.id,
+        dateRetraitPrevue: form.dateRetraitPrevue + ":00",
+      });
       notify("Commande créée ✓");
       setOpenDepot(false);
       setForm({ clientId: null, agenceId, employeId, dateRetraitPrevue: "", articles: [{ ...EMPTY_ARTICLE }] });
@@ -124,7 +156,9 @@ export default function CommandesPage() {
       {/* ── En-tête ── */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 4 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700} sx={{ color: C.text, letterSpacing: "-0.5px" }}>Commandes</Typography>
+          <Typography variant="h5" fontWeight={700} sx={{ color: C.text, letterSpacing: "-0.5px" }}>
+            Commandes
+          </Typography>
           <Typography variant="caption" sx={{ color: C.muted }}>
             {commandes.length} commande{commandes.length !== 1 ? "s" : ""} · Glisser-déposer pour changer le statut
           </Typography>
@@ -148,13 +182,18 @@ export default function CommandesPage() {
         "&::-webkit-scrollbar-track": { bgcolor: C.surface },
         "&::-webkit-scrollbar-thumb": { bgcolor: C.border, borderRadius: 3 } }}>
         {colonnes.map((col) => (
-          <Box key={col.key} onDragOver={(e) => onDragOver(e, col.key)} onDrop={(e) => onDrop(e, col.key)}
+          <Box key={col.key}
+            onDragOver={(e) => onDragOver(e, col.key)}
+            onDrop={(e) => onDrop(e, col.key)}
             sx={{ minWidth: 280, maxWidth: 280, flexShrink: 0 }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2, p: 1.5, borderRadius: 2,
               bgcolor: `${col.color}15`, border: `1px solid ${col.color}30` }}>
               <Box sx={{ color: col.color }}>{col.icon}</Box>
-              <Typography variant="body2" fontWeight={700} sx={{ color: col.color, flex: 1 }}>{col.label}</Typography>
-              <Badge badgeContent={col.items.length} sx={{ "& .MuiBadge-badge": { bgcolor: col.color, color: "#000", fontWeight: 700, fontSize: 11 } }}>
+              <Typography variant="body2" fontWeight={700} sx={{ color: col.color, flex: 1 }}>
+                {col.label}
+              </Typography>
+              <Badge badgeContent={col.items.length}
+                sx={{ "& .MuiBadge-badge": { bgcolor: col.color, color: "#000", fontWeight: 700, fontSize: 11 } }}>
                 <Box sx={{ width: 8 }} />
               </Badge>
             </Box>
@@ -163,14 +202,27 @@ export default function CommandesPage() {
                 <KanbanCard key={cmd.id} cmd={cmd} colColor={col.color} clients={clients}
                   onDragStart={onDragStart} onVoir={voirDetail}
                   onStatut={async (id, s) => {
+                    // ✅ Validation aussi sur le bouton rapide
+                    const autorisees = TRANSITIONS_AUTORISEES[cmd.statut] || [];
+                    if (!autorisees.includes(s)) {
+                      notify("Transition non autorisée", "warning"); return;
+                    }
                     setCommandes((prev) => prev.map((c) => c.id === id ? { ...c, statut: s } : c));
-                    try { await commandeService.changerStatut(id, s); notify("Statut mis à jour"); }
-                    catch { notify("Erreur", "error"); charger(); }
+                    try {
+                      await commandeService.changerStatut(id, s);
+                      notify("Statut mis à jour");
+                    } catch { notify("Erreur", "error"); charger(); }
                   }} />
               ))}
               {col.items.length === 0 && (
                 <Box sx={{ border: `2px dashed ${col.color}30`, borderRadius: 2, p: 3, textAlign: "center" }}>
-                  <Typography variant="caption" sx={{ color: C.muted }}>Glisser ici</Typography>
+                  <Typography variant="caption" sx={{ color: C.muted }}>
+                    {TRANSITIONS_AUTORISEES[
+                      STATUTS[STATUTS.findIndex(s => s.key === col.key) - 1]?.key
+                    ]?.includes(col.key)
+                      ? "Glisser ici"
+                      : "Aucune commande"}
+                  </Typography>
                 </Box>
               )}
             </Stack>
@@ -190,14 +242,17 @@ export default function CommandesPage() {
         <Divider sx={{ borderColor: C.border }} />
         <DialogContent sx={{ pt: 3, display: "flex", flexDirection: "column", gap: 3 }}>
           <Box sx={{ display: "flex", gap: 2 }}>
-            <Autocomplete options={clients} getOptionLabel={(o) => `${o.prenom} ${o.nom} — ${o.telephone}`}
-              value={form.clientId} onChange={(_, v) => setForm((f) => ({ ...f, clientId: v }))}
+            <Autocomplete options={clients}
+              getOptionLabel={(o) => `${o.prenom} ${o.nom} — ${o.telephone}`}
+              value={form.clientId}
+              onChange={(_, v) => setForm((f) => ({ ...f, clientId: v }))}
               renderInput={(params) => (
                 <TextField {...params} label="Client *" size="small"
                   InputProps={{ ...params.InputProps, startAdornment: <><Person sx={{ color: C.muted, fontSize: 18, mr: 0.5 }} />{params.InputProps.startAdornment}</> }}
                   sx={iSx} />
               )} sx={{ flex: 1 }} />
-            <TextField label="Date retrait prévue *" type="datetime-local" value={form.dateRetraitPrevue}
+            <TextField label="Date retrait prévue *" type="datetime-local"
+              value={form.dateRetraitPrevue}
               onChange={(e) => setForm((f) => ({ ...f, dateRetraitPrevue: e.target.value }))}
               size="small" InputLabelProps={{ shrink: true }}
               InputProps={{ startAdornment: <CalendarMonth sx={{ color: C.muted, fontSize: 18, mr: 0.5 }} /> }}
@@ -205,8 +260,13 @@ export default function CommandesPage() {
           </Box>
           <Box>
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
-              <Typography variant="body2" fontWeight={600} sx={{ color: C.text }}>Articles ({form.articles.length})</Typography>
-              <Button size="small" startIcon={<Add />} onClick={addArticle} sx={{ color: C.blue, textTransform: "none", fontSize: 12 }}>Ajouter article</Button>
+              <Typography variant="body2" fontWeight={600} sx={{ color: C.text }}>
+                Articles ({form.articles.length})
+              </Typography>
+              <Button size="small" startIcon={<Add />} onClick={addArticle}
+                sx={{ color: C.blue, textTransform: "none", fontSize: 12 }}>
+                Ajouter article
+              </Button>
             </Box>
             <Stack spacing={1.5}>
               {form.articles.map((art, i) => (
@@ -215,20 +275,31 @@ export default function CommandesPage() {
                     <Box sx={{ color: C.muted, mt: 0.5, cursor: "grab" }}><DragIndicator fontSize="small" /></Box>
                     <Autocomplete options={TYPES_VETEMENT} value={art.typeVetement}
                       onChange={(_, v) => updateArticle(i, "typeVetement", v || "")} freeSolo
-                      renderInput={(params) => <TextField {...params} label="Type vêtement *" size="small" sx={{ width: 160, ...iSx }} />} />
+                      renderInput={(params) => (
+                        <TextField {...params} label="Type vêtement *" size="small" sx={{ width: 160, ...iSx }} />
+                      )} />
                     <FormControl size="small" sx={{ width: 190 }}>
                       <InputLabel sx={{ color: C.muted }}>Service *</InputLabel>
-                      <Select value={art.service} label="Service *" onChange={(e) => updateArticle(i, "service", e.target.value)}
+                      <Select value={art.service} label="Service *"
+                        onChange={(e) => updateArticle(i, "service", e.target.value)}
                         sx={{ color: C.text, "& .MuiOutlinedInput-notchedOutline": { borderColor: C.border }, "& .MuiSvgIcon-root": { color: C.muted } }}>
                         {SERVICES.map((s) => <MenuItem key={s} value={s} sx={{ fontSize: 13 }}>{s}</MenuItem>)}
                       </Select>
                     </FormControl>
-                    <TextField label="Code-barres" value={art.codeBarres} onChange={(e) => updateArticle(i, "codeBarres", e.target.value)}
-                      size="small" InputProps={{ startAdornment: <QrCode sx={{ color: C.muted, fontSize: 16, mr: 0.5 }} /> }} sx={{ width: 140, ...iSx }} />
-                    <TextField label="Observations" value={art.observations} onChange={(e) => updateArticle(i, "observations", e.target.value)}
-                      size="small" InputProps={{ startAdornment: <Notes sx={{ color: C.muted, fontSize: 16, mr: 0.5 }} /> }} sx={{ flex: 1, minWidth: 140, ...iSx }} />
+                    <TextField label="Code-barres" value={art.codeBarres}
+                      onChange={(e) => updateArticle(i, "codeBarres", e.target.value)}
+                      size="small"
+                      InputProps={{ startAdornment: <QrCode sx={{ color: C.muted, fontSize: 16, mr: 0.5 }} /> }}
+                      sx={{ width: 140, ...iSx }} />
+                    <TextField label="Observations" value={art.observations}
+                      onChange={(e) => updateArticle(i, "observations", e.target.value)}
+                      size="small"
+                      InputProps={{ startAdornment: <Notes sx={{ color: C.muted, fontSize: 16, mr: 0.5 }} /> }}
+                      sx={{ flex: 1, minWidth: 140, ...iSx }} />
                     {form.articles.length > 1 && (
-                      <IconButton size="small" onClick={() => removeArticle(i)} sx={{ color: C.red, mt: 0.3 }}><Close fontSize="small" /></IconButton>
+                      <IconButton size="small" onClick={() => removeArticle(i)} sx={{ color: C.red, mt: 0.3 }}>
+                        <Close fontSize="small" />
+                      </IconButton>
                     )}
                   </Box>
                 </Paper>
@@ -251,16 +322,16 @@ export default function CommandesPage() {
         PaperProps={{ sx: { bgcolor: C.surface, border: `1px solid ${C.border}`, borderRadius: 3 } }}>
         {selectedCmd && (
           <>
-            {/* En-tête */}
             <Box sx={{ bgcolor: C.card, p: 3, display: "flex", alignItems: "center", gap: 2 }}>
               <Avatar sx={{ bgcolor: C.accent, width: 48, height: 48 }}><LocalLaundryService /></Avatar>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="h6" fontWeight={700} sx={{ color: C.text }}>Commande #{selectedCmd.id}</Typography>
+                <Typography variant="h6" fontWeight={700} sx={{ color: C.text }}>
+                  Commande #{selectedCmd.id}
+                </Typography>
                 <Chip label={statutInfo(selectedCmd.statut).label} size="small"
                   sx={{ bgcolor: `${statutInfo(selectedCmd.statut).color}20`, color: statutInfo(selectedCmd.statut).color,
                     border: `1px solid ${statutInfo(selectedCmd.statut).color}40`, fontWeight: 600, fontSize: 11 }} />
               </Box>
-              {/* ── PDF Actions dans l'en-tête ── */}
               <PdfActions type="ticketDepot"   id={selectedCmd.id} variant="icon" />
               <PdfActions type="factureClient" id={selectedCmd.id} variant="icon" />
               <IconButton onClick={() => setOpenDetail(false)} sx={{ color: C.muted }}><Close fontSize="small" /></IconButton>
@@ -268,7 +339,9 @@ export default function CommandesPage() {
 
             <DialogContent sx={{ pt: 3 }}>
               {/* Timeline */}
-              <Typography variant="caption" sx={{ color: C.muted, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>Progression</Typography>
+              <Typography variant="caption" sx={{ color: C.muted, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>
+                Progression
+              </Typography>
               <Box sx={{ display: "flex", alignItems: "center", mt: 1.5, mb: 3 }}>
                 {TIMELINE_STEPS.map((step, idx) => {
                   const info = statutInfo(step);
@@ -284,7 +357,9 @@ export default function CommandesPage() {
                         </Box>
                       </Tooltip>
                       {idx < TIMELINE_STEPS.length - 1 && (
-                        <Box sx={{ flex: 1, height: 2, bgcolor: done && TIMELINE_STEPS.indexOf(selectedCmd.statut) > idx ? info.color : C.border, mx: 0.5 }} />
+                        <Box sx={{ flex: 1, height: 2,
+                          bgcolor: done && TIMELINE_STEPS.indexOf(selectedCmd.statut) > idx ? info.color : C.border,
+                          mx: 0.5 }} />
                       )}
                     </Box>
                   );
@@ -294,10 +369,10 @@ export default function CommandesPage() {
               {/* Infos */}
               <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5, mb: 3 }}>
                 {[
-                  { label: "Client",        value: `#${selectedCmd.clientId}` },
-                  { label: "Montant total",  value: selectedCmd.montantTotal ? `${selectedCmd.montantTotal} FCFA` : "—" },
-                  { label: "Date dépôt",     value: formatDate(selectedCmd.dateDepot) },
-                  { label: "Retrait prévu",  value: formatDate(selectedCmd.dateRetraitPrevue) },
+                  { label: "Client",       value: `#${selectedCmd.clientId}` },
+                  { label: "Montant total", value: selectedCmd.montantTotal ? `${selectedCmd.montantTotal} FCFA` : "—" },
+                  { label: "Date dépôt",   value: formatDate(selectedCmd.dateDepot) },
+                  { label: "Retrait prévu", value: formatDate(selectedCmd.dateRetraitPrevue) },
                 ].map(({ label, value }) => (
                   <Box key={label} sx={{ bgcolor: C.card, p: 1.5, borderRadius: 2, border: `1px solid ${C.border}` }}>
                     <Typography variant="caption" sx={{ color: C.muted, display: "block" }}>{label}</Typography>
@@ -316,20 +391,24 @@ export default function CommandesPage() {
                     p: 1.5, bgcolor: C.card, borderRadius: 2, border: `1px solid ${C.border}` }}>
                     <Box>
                       <Typography variant="body2" fontWeight={600} sx={{ color: C.text }}>{art.typeVetement}</Typography>
-                      <Typography variant="caption" sx={{ color: C.muted }}>{art.service}{art.codeBarres ? ` · ${art.codeBarres}` : ""}</Typography>
+                      <Typography variant="caption" sx={{ color: C.muted }}>
+                        {art.service}{art.codeBarres ? ` · ${art.codeBarres}` : ""}
+                      </Typography>
                     </Box>
                     <Box sx={{ textAlign: "right" }}>
                       <Chip label={art.statut || "EN_ATTENTE"} size="small"
                         sx={{ fontSize: 10, bgcolor: `${C.blue}20`, color: C.blue }} />
                       {art.tarifUnitaire && (
-                        <Typography variant="caption" sx={{ color: C.green, display: "block", mt: 0.3 }}>{art.tarifUnitaire} FCFA</Typography>
+                        <Typography variant="caption" sx={{ color: C.green, display: "block", mt: 0.3 }}>
+                          {art.tarifUnitaire} FCFA
+                        </Typography>
                       )}
                     </Box>
                   </Box>
                 ))}
               </Stack>
 
-              {/* ── PDF Actions section ── */}
+              {/* Documents PDF */}
               <Box sx={{ p: 2, bgcolor: C.card, borderRadius: 2, border: `1px solid ${C.border}`, mb: 2 }}>
                 <Typography variant="caption" sx={{ color: C.muted, display: "block", mb: 1.5, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>
                   Documents
@@ -346,27 +425,36 @@ export default function CommandesPage() {
                 </Box>
               </Box>
 
-              {/* Changer statut */}
+              {/* Changer statut — ✅ seulement les transitions autorisées */}
               <Box sx={{ p: 2, bgcolor: C.card, borderRadius: 2, border: `1px solid ${C.border}` }}>
                 <Typography variant="caption" sx={{ color: C.muted, display: "block", mb: 1.5, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }}>
                   Changer le statut
                 </Typography>
                 <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                  {STATUTS.filter((s) => s.key !== selectedCmd.statut).map((s) => (
-                    <Chip key={s.key}
-                      icon={<Box sx={{ color: `${s.color} !important`, display: "flex" }}>{s.icon}</Box>}
-                      label={s.label}
-                      onClick={async () => {
-                        try {
-                          const updated = await commandeService.changerStatut(selectedCmd.id, s.key);
-                          setSelectedCmd(updated);
-                          setCommandes((prev) => prev.map((c) => c.id === updated.id ? updated : c));
-                          notify(`Statut → ${s.label} ✓`);
-                        } catch { notify("Erreur changement statut", "error"); }
-                      }}
-                      sx={{ bgcolor: `${s.color}15`, color: s.color, border: `1px solid ${s.color}40`,
-                        cursor: "pointer", fontWeight: 500, "&:hover": { bgcolor: `${s.color}30` } }} />
-                  ))}
+                  {(TRANSITIONS_AUTORISEES[selectedCmd.statut] || []).length === 0 ? (
+                    <Typography variant="caption" sx={{ color: C.muted }}>
+                      Commande terminée — aucune transition possible
+                    </Typography>
+                  ) : (
+                    (TRANSITIONS_AUTORISEES[selectedCmd.statut] || []).map((key) => {
+                      const s = statutInfo(key);
+                      return (
+                        <Chip key={key}
+                          icon={<Box sx={{ color: `${s.color} !important`, display: "flex" }}>{s.icon}</Box>}
+                          label={s.label}
+                          onClick={async () => {
+                            try {
+                              const updated = await commandeService.changerStatut(selectedCmd.id, key);
+                              setSelectedCmd(updated);
+                              setCommandes((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+                              notify(`Statut → ${s.label} ✓`);
+                            } catch { notify("Erreur changement statut", "error"); }
+                          }}
+                          sx={{ bgcolor: `${s.color}15`, color: s.color, border: `1px solid ${s.color}40`,
+                            cursor: "pointer", fontWeight: 500, "&:hover": { bgcolor: `${s.color}30` } }} />
+                      );
+                    })
+                  )}
                 </Box>
               </Box>
             </DialogContent>
@@ -374,9 +462,12 @@ export default function CommandesPage() {
         )}
       </Dialog>
 
-      <Snackbar open={snack.open} autoHideDuration={3500} onClose={() => setSnack((s) => ({ ...s, open: false }))}
+      <Snackbar open={snack.open} autoHideDuration={3500}
+        onClose={() => setSnack((s) => ({ ...s, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
-        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>{snack.msg}</Alert>
+        <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))}>
+          {snack.msg}
+        </Alert>
       </Snackbar>
     </Box>
   );
@@ -384,20 +475,23 @@ export default function CommandesPage() {
 
 // ─── KanbanCard ────────────────────────────────────────────────────────────────
 function KanbanCard({ cmd, colColor, clients, onDragStart, onVoir, onStatut }) {
-  const client    = clients.find((c) => c.id === cmd.clientId);
-  const nextStatut = STATUTS[STATUTS.findIndex((s) => s.key === cmd.statut) + 1];
+  const client = clients.find((c) => c.id === cmd.clientId);
+
+  // ✅ Prochain statut selon les transitions autorisées
+  const nextKey    = (TRANSITIONS_AUTORISEES[cmd.statut] || [])[0];
+  const nextStatut = nextKey ? STATUTS.find((s) => s.key === nextKey) : null;
 
   return (
     <Paper draggable onDragStart={() => onDragStart(cmd)} elevation={0}
       sx={{ bgcolor: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${colColor}`,
         borderRadius: 2, p: 2, cursor: "grab", transition: "all 0.15s",
-        "&:hover": { border: `1px solid ${colColor}60`, borderLeft: `3px solid ${colColor}`, transform: "translateY(-1px)", boxShadow: `0 4px 20px ${colColor}20` },
+        "&:hover": { border: `1px solid ${colColor}60`, borderLeft: `3px solid ${colColor}`,
+          transform: "translateY(-1px)", boxShadow: `0 4px 20px ${colColor}20` },
         "&:active": { cursor: "grabbing" } }}>
 
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1.5 }}>
         <Typography variant="body2" fontWeight={700} sx={{ color: C.text }}>#{cmd.id}</Typography>
         <Box sx={{ display: "flex", gap: 0.3 }}>
-          {/* ── PDF icônes sur la carte ── */}
           <PdfActions type="ticketDepot" id={cmd.id} variant="icon" />
           <Tooltip title="Voir détails">
             <IconButton size="small" onClick={() => onVoir(cmd.id)} sx={{ color: C.muted, p: 0.3 }}>
@@ -421,21 +515,27 @@ function KanbanCard({ cmd, colColor, clients, onDragStart, onVoir, onStatut }) {
           label={`${cmd.articles?.length || 0} article${(cmd.articles?.length || 0) > 1 ? "s" : ""}`}
           size="small" sx={{ bgcolor: `${C.blue}15`, color: C.blue, fontSize: 10, height: 20 }} />
         {cmd.montantTotal && (
-          <Chip label={`${cmd.montantTotal} FCFA`} size="small" sx={{ bgcolor: `${C.green}15`, color: C.green, fontSize: 10, height: 20 }} />
+          <Chip label={`${cmd.montantTotal} FCFA`} size="small"
+            sx={{ bgcolor: `${C.green}15`, color: C.green, fontSize: 10, height: 20 }} />
         )}
       </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1.5 }}>
         <Schedule sx={{ fontSize: 12, color: C.muted }} />
         <Typography variant="caption" sx={{ color: C.muted }}>
-          {cmd.dateRetraitPrevue ? new Date(cmd.dateRetraitPrevue).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) : "—"}
+          {cmd.dateRetraitPrevue
+            ? new Date(cmd.dateRetraitPrevue).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })
+            : "—"}
         </Typography>
       </Box>
 
-      {nextStatut && cmd.statut !== "ANNULE" && (
-        <Button size="small" endIcon={<ArrowForward sx={{ fontSize: 12 }} />} onClick={() => onStatut(cmd.id, nextStatut.key)}
-          sx={{ fontSize: 11, textTransform: "none", color: nextStatut.color, bgcolor: `${nextStatut.color}15`,
-            borderRadius: 1.5, px: 1, py: 0.3, width: "100%", "&:hover": { bgcolor: `${nextStatut.color}25` } }}>
+      {/* ✅ Bouton transition autorisée uniquement */}
+      {nextStatut && (
+        <Button size="small" endIcon={<ArrowForward sx={{ fontSize: 12 }} />}
+          onClick={() => onStatut(cmd.id, nextStatut.key)}
+          sx={{ fontSize: 11, textTransform: "none", color: nextStatut.color,
+            bgcolor: `${nextStatut.color}15`, borderRadius: 1.5, px: 1, py: 0.3, width: "100%",
+            "&:hover": { bgcolor: `${nextStatut.color}25` } }}>
           → {nextStatut.label}
         </Button>
       )}
